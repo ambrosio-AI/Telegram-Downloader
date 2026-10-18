@@ -1,0 +1,23 @@
+# Copia este fichero a "config.toml" y rellena api_id / api_hash.
+# Los obtienes en https://my.telegram.org  ->  API development tools
+
+[telegram]
+api_id = 0
+api_hash = ""
+# Fichero de sesión (Telethon le añade .session). NO lo compartas: es tu cuenta.
+session = "data/tg"
+
+[downloads]
+# Carpeta destino por defecto que propondrá la interfaz.
+root = "./descargas"
+# Crear una subcarpeta por grupo dentro de la carpeta destino.
+subfolder_por_grupo = true
+# Saltar ficheros ya descargados (mismo fichero y mismo destino).
+skip_existing = true
+# Reintentos por fichero ante error transitorio (FloodWait, timeout, red).
+max_retries = 3
+
+[server]
+# Solo escucha en tu propia máquina. No lo cambies a 0.0.0.0 si no sabes qué haces.
+host = "127.0.0.1"
+port = 8765

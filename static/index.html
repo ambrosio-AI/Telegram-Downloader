@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telegram-Downloader · descargador de grupos de Telegram</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e8ecf3; --dim:#9aa4b2; --acc:#4da3ff; --ok:#3ddc97; --warn:#ffb020; --err:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.3px}
+  .badge{padding:2px 9px;border-radius:999px;font-size:12px;background:var(--panel2);border:1px solid var(--line);color:var(--dim)}
+  .badge.ok{color:var(--ok);border-color:#215c45} .badge.err{color:var(--err);border-color:#6b2b2b} .badge.demo{color:var(--warn);border-color:#6b5320}
+  .tabs{display:flex;gap:6px;margin-left:auto}
+  .tab{padding:6px 13px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--dim);cursor:pointer;font-size:13px}
+  .tab.active{background:var(--panel2);border-color:var(--line);color:var(--txt)}
+  main{padding:16px 18px 90px;max-width:1500px;margin:0 auto}
+  .banner{margin:0 18px 0;padding:10px 14px;border-radius:10px;background:#2a2110;border:1px solid #6b5320;color:#ffd693;font-size:13px}
+  .banner code{background:#00000040;padding:1px 6px;border-radius:5px;user-select:all}
+  .grid{display:grid;grid-template-columns:330px 1fr;gap:14px;align-items:start}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--dim);margin:0;padding:11px 14px;border-bottom:1px solid var(--line)}
+  .pad{padding:12px 14px}
+  input,select,button{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:7px 10px;outline:none}
+  input:focus,select:focus{border-color:var(--acc)}
+  button{cursor:pointer} button:hover{border-color:#3d4657}
+  button.primary{background:var(--acc);border-color:var(--acc);color:#04121f;font-weight:600}
+  button.primary:disabled{opacity:.45;cursor:not-allowed}
+  button.ghost{background:transparent}
+  .chatlist{max-height:60vh;overflow:auto}
+  .chat{padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:flex;gap:8px;align-items:center}
+  .chat:hover{background:var(--panel2)} .chat.active{background:#12233a;border-left:3px solid var(--acc)}
+  .chat small{color:var(--dim)}
+  .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .filters label{display:flex;gap:5px;align-items:center;color:var(--dim);font-size:12px}
+  .filters input[type=text],.filters input[type=number],.filters input[type=date]{min-width:110px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+  th{color:var(--dim);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0;background:var(--panel)}
+  tr.dl td{opacity:.6}
+  .tblwrap{max-height:58vh;overflow:auto}
+  .name{max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bar{height:7px;background:#0c0e12;border-radius:99px;overflow:hidden;min-width:90px}
+  .bar i{display:block;height:100%;background:var(--acc);width:0}
+  .st{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
+  .st.done{color:var(--ok);border-color:#215c45}.st.error{color:var(--err);border-color:#6b2b2b}
+  .st.running{color:var(--acc);border-color:#204a75}.st.cancelled{color:var(--warn);border-color:#6b5320}
+  .foot{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:10px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:6}
+  .foot .grow{flex:1;min-width:220px}
+  .muted{color:var(--dim);font-size:12px}
+  .modal{position:fixed;inset:0;background:#000000aa;display:none;align-items:center;justify-content:center;z-index:20}
+  .modal.on{display:flex}
+  .modal .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;width:min(720px,92vw);max-height:80vh;display:flex;flex-direction:column}
+  .modal .box header{position:static;border-radius:12px 12px 0 0}
+  .modal .list{overflow:auto;padding:6px 0}
+  .modal .list div{padding:7px 16px;cursor:pointer;font-family:ui-monospace,Consolas,monospace;font-size:12.5px}
+  .modal .list div:hover{background:var(--panel2)}
+  .toast{position:fixed;right:18px;bottom:78px;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--acc);
+         padding:10px 14px;border-radius:10px;max-width:420px;display:none;z-index:30;font-size:13px}
+  .toast.on{display:block}
+  .empty{padding:26px 14px;color:var(--dim);text-align:center}
+</style>
+</head>
+<body>
+<header>
+  <h1>Telegram-Downloader</h1>
+  <span id="badge" class="badge">comprobando…</span>
+  <span class="tabs">
+    <button class="tab active" data-tab="explorar">Explorar</button>
+    <button class="tab" data-tab="cola">Cola <span id="qcount"></span></button>
+    <button class="tab" data-tab="desc">Descargado</button>
+  </span>
+</header>
+
+<div id="banner" class="banner" style="display:none;margin-top:14px"></div>
+
+<main>
+  <!-- ------------------------------------------------------------------ -->
+  <section id="tab-explorar">
+    <div class="grid">
+      <div class="card">
+        <h2>Grupos y chats</h2>
+        <div class="pad" style="padding-bottom:8px"><input id="chatq" type="text" placeholder="buscar grupo…" style="width:100%"></div>
+        <div id="chatlist" class="chatlist"><div class="empty">pulsa «cargar chats»</div></div>
+        <div class="pad"><button id="loadchats" style="width:100%">Cargar chats</button></div>
+      </div>
+
+      <div class="card">
+        <h2>Ficheros</h2>
+        <div class="pad filters">
+          <label>Texto <input id="f_q" type="text" placeholder="parte del nombre"></label>
+          <label>Extensiones <input id="f_ext" type="text" placeholder="mp4,mkv,pdf"></label>
+          <label>Tipo
+            <select id="f_type">
+              <option value="">cualquiera</option>
+              <option value="video">vídeo</option>
+              <option value="audio">audio</option>
+              <option value="imagen">imagen</option>
+              <option value="archivo">comprimido/iso</option>
+              <option value="documento">documento</option>
+            </select>
+          </label>
+          <label>Mín MB <input id="f_min" type="number" min="0" step="1" style="width:80px"></label>
+          <label>Máx MB <input id="f_max" type="number" min="0" step="1" style="width:80px"></label>
+          <label>Desde <input id="f_since" type="date"></label>
+          <label>Hasta <input id="f_until" type="date"></label>
+          <button id="search" class="primary">Buscar</button>
+          <button id="more" class="ghost" style="display:none">Cargar más</button>
+        </div>
+        <div class="tblwrap">
+          <table>
+            <thead><tr>
+              <th style="width:34px"><input type="checkbox" id="selall"></th>
+              <th>Fichero</th><th style="width:100px">Tamaño</th><th style="width:140px">Fecha</th>
+              <th style="width:130px">Quién</th><th style="width:70px">Tipo</th>
+            </tr></thead>
+            <tbody id="rows"><tr><td colspan="6" class="empty">elige un grupo a la izquierda y pulsa «Buscar»</td></tr></tbody>
+          </table>
+        </div>
+        <div class="pad muted" id="listinfo"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section id="tab-cola" style="display:none">
+    <div class="card">
+      <h2>Cola de descargas</h2>
+      <div class="pad" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button id="btn_pause">Pausar</button>
+        <button id="btn_retryf">Reintentar fallidos</button>
+        <button id="btn_clear">Limpiar terminados</button>
+        <span class="muted" id="qsummary"></span>
+      </div>
+      <div class="tblwrap">
+        <table>
+          <thead><tr>
+            <th style="width:50px">#</th><th>Fichero</th><th style="width:110px">Tamaño</th>
+            <th style="width:190px">Progreso</th><th style="width:110px">Estado</th><th style="width:190px">Acciones</th>
+          </tr></thead>
+          <tbody id="qrows"><tr><td colspan="6" class="empty">cola vacía</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------------ -->
+  <section id="tab-desc" style="display:none">
+    <div class="card">
+      <h2>Ya descargado</h2>
+      <div class="pad filters">
+        <label>Buscar <input id="d_q" type="text" placeholder="nombre o ruta"></label>
+        <button id="d_search" class="primary">Buscar</button>
+        <span class="muted" id="dinfo"></span>
+      </div>
+      <div class="tblwrap">
+        <table>
+          <thead><tr><th>Fichero</th><th style="width:100px">Tamaño</th><th style="width:150px">Cuándo</th><th>Ruta</th></tr></thead>
+          <tbody id="drows"><tr><td colspan="4" class="empty">nada todavía</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="foot">
+  <span class="muted">Carpeta destino</span>
+  <input id="dest" type="text" class="grow" placeholder="p.ej. /home/tu-usuario/Descargas/telegram">
+  <button id="browse" class="ghost">Examinar…</button>
+  <span class="muted" id="selinfo">0 seleccionados</span>
+  <button id="enqueue" class="primary" disabled>Añadir a la cola</button>
+</div>
+
+<div class="modal" id="modal">
+  <div class="box">
+    <header><h1 id="mtitle">Elegir carpeta</h1><button class="ghost" id="mclose" style="margin-left:auto">cerrar</button></header>
+    <div class="pad" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <button id="mup">↑ subir</button>
+      <input id="mpath" type="text" class="grow" style="flex:1;min-width:240px" readonly>
+      <button id="mchoose" class="primary">Usar esta carpeta</button>
+    </div>
+    <div class="list" id="mlist"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const api = async (url, opts) => {
+  const r = await fetch(url, opts);
+  const t = await r.text();
+  let j = null; try { j = t ? JSON.parse(t) : null; } catch(e) { j = { detail: t }; }
+  if (!r.ok) throw new Error((j && (j.detail || j.message)) || ("HTTP " + r.status));
+  return j;
+};
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const hb = (n) => { n = Number(n||0); const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024 && i<u.length-1){n/=1024;i++;} return (i===0?n.toFixed(0):n.toFixed(1))+' '+u[i]; };
+const when = (ts) => ts ? new Date(ts*1000).toLocaleString() : "";
+
+let state = {results: [], selected: new Map(), offset: null, chat: null, chats: [], demo: false};
+
+function toast(msg, ms=4200){ const t=$("#toast"); t.innerHTML=msg; t.classList.add("on"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"), ms); }
+
+/* ------------------------------- pestañas ------------------------------- */
+document.querySelectorAll(".tab").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x===b));
+  ["explorar","cola","desc"].forEach(id => $("#tab-"+id).style.display = (id===b.dataset.tab) ? "" : "none");
+  if (b.dataset.tab === "cola") refreshQueue();
+  if (b.dataset.tab === "desc") loadManifest();
+});
+
+/* -------------------------------- estado -------------------------------- */
+async function loadStatus(){
+  try{
+    const s = await api("/api/status");
+    state.demo = s.demo;
+    const b = $("#badge");
+    b.className = "badge " + (s.demo ? "demo" : (s.state === "ok" ? "ok" : "err"));
+    b.textContent = s.demo ? "modo demo" : (s.state === "ok" ? "sesión: " + (s.me && (s.me.name || s.me.username)) : "sin sesión (" + s.state + ")");
+    if ($("#dest").value === "") $("#dest").value = s.dest_root || "";
+    if (state.demo || s.state === "ok") $("#banner").style.display = "none";
+    else {
+      $("#banner").style.display = "";
+      $("#banner").innerHTML = "No hay sesión de Telegram todavía. Cierra esta ventana y ejecuta en la carpeta del programa: "
+        + "<code>python -m telegram_downloader login --qr</code> (escaneas el QR con el móvil) o <code>python -m telegram_downloader login</code>. "
+        + "Después vuelve a abrir la interfaz.";
+    }
+    $("#qcount").textContent = (s.counts.pending + s.counts.running) ? "(" + (s.counts.pending + s.counts.running) + ")" : "";
+    updateSel();
+  }catch(e){ toast("No puedo leer el estado: " + esc(e.message)); }
+}
+
+/* -------------------------------- chats --------------------------------- */
+async function loadChats(){
+  try{
+    const q = $("#chatq").value.trim();
+    const r = await api("/api/dialogs" + (q ? "?q=" + encodeURIComponent(q) : ""));
+    state.chats = r.items;
+    $("#chatlist").innerHTML = r.items.length ? r.items.map(c =>
+      `<div class="chat" data-id="${c.id}"><span>${esc(c.title)}</span><small>${esc(c.kind)}</small></div>`).join("")
+      : `<div class="empty">sin resultados</div>`;
+    document.querySelectorAll(".chat").forEach(el => el.onclick = () => {
+      document.querySelectorAll(".chat").forEach(x => x.classList.toggle("active", x===el));
+      state.chat = {id: Number(el.dataset.id), title: el.querySelector("span").textContent};
+      state.results = []; state.selected.clear(); state.offset = null;
+      $("#rows").innerHTML = `<tr><td colspan="6" class="empty">pulsa «Buscar»</td></tr>`;
+      updateSel();
+    });
+  }catch(e){ $("#chatlist").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+/* ------------------------------- búsqueda ------------------------------- */
+function filtersBody(offset){
+  const num = (v) => v === "" ? null : Number(v);
+  const day = (id) => $("#"+id).value ? Math.floor(new Date($("#"+id).value + "T00:00:00").getTime()/1000) : null;
+  const dayEnd = (id) => $("#"+id).value ? Math.floor(new Date($("#"+id).value + "T23:59:59").getTime()/1000) : null;
+  return {
+    chat_id: state.chat.id,
+    offset: offset,
+    limit: 50,
+    q: $("#f_q").value.trim() || null,
+    exts: $("#f_ext").value.split(",").map(s=>s.trim()).filter(Boolean),
+    types: $("#f_type").value ? [$("#f_type").value] : [],
+    min_size: ($("#f_min").value ? Number($("#f_min").value) * 1048576 : null),
+    max_size: ($("#f_max").value ? Number($("#f_max").value) * 1048576 : null),
+    since: day("f_since"), until: dayEnd("f_until")
+  };
+}
+
+function rowHtml(it, i){
+  const key = it.chat_id + ":" + it.msg_id;
+  const sel = state.selected.has(key) ? "checked" : "";
+  const done = it.downloaded ? " class=\"dl\"" : "";
+  const tag = it.downloaded ? ` <span class="st done">ya está</span>` : "";
+  return `<tr${done}>
+    <td><input type="checkbox" class="pick" data-i="${i}" ${sel}></td>
+    <td class="name" title="${esc(it.file_name)}">${esc(it.file_name)}${tag}</td>
+    <td>${hb(it.size)}</td>
+    <td>${when(it.date)}</td>
+    <td>${esc(it.sender || "")}</td>
+    <td>${esc(it.kind || "")}</td></tr>`;
+}
+
+function renderResults(){
+  $("#rows").innerHTML = state.results.length ? state.results.map(rowHtml).join("")
+    : `<tr><td colspan="6" class="empty">sin resultados con esos filtros</td></tr>`;
+  document.querySelectorAll(".pick").forEach(cb => cb.onchange = () => {
+    const it = state.results[Number(cb.dataset.i)];
+    const key = it.chat_id + ":" + it.msg_id;
+    if (cb.checked) state.selected.set(key, it); else state.selected.delete(key);
+    updateSel();
+  });
+  $("#more").style.display = state.offset ? "" : "none";
+}
+
+async function search(more=false){
+  if (!state.chat) { toast("Elige primero un grupo a la izquierda."); return; }
+  $("#search").disabled = true;
+  try{
+    const body = filtersBody(more ? state.offset : 0);
+    const r = await api("/api/list", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+    state.results = more ? state.results.concat(r.items) : r.items;
+    state.offset = r.next_offset;
+    renderResults();
+    $("#listinfo").textContent = `${state.results.length} fichero(s) listados · ${r.scanned} mensajes leídos${state.offset ? " · hay más, pulsa «Cargar más»" : ""}`;
+  }catch(e){ toast("Error al listar: " + esc(e.message), 8000); }
+  finally{ $("#search").disabled = false; }
+}
+
+function updateSel(){
+  const n = state.selected.size;
+  $("#selinfo").textContent = n + " seleccionados";
+  $("#enqueue").disabled = n === 0;
+  $("#enqueue").textContent = n ? `Añadir ${n} a la cola` : "Añadir a la cola";
+}
+
+/* --------------------------------- cola --------------------------------- */
+async function enqueue(){
+  const items = [...state.selected.values()];
+  if (!items.length) return;
+  const dest = $("#dest").value.trim();
+  if (!dest) { toast("Escribe o elige una carpeta destino."); return; }
+  try{
+    const r = await api("/api/queue", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items, dest_dir: dest})});
+    toast(`Encolados ${r.added}. Ya en cola: ${r.queued_before}. Ya descargados (saltados): ${r.skipped_done}.`);
+    state.selected.clear();
+    document.querySelectorAll(".pick").forEach(cb => cb.checked = false);
+    updateSel(); loadStatus(); refreshQueue();
+  }catch(e){ toast("No he podido encolar: " + esc(e.message), 8000); }
+}
+
+function qRow(it){
+  const pct = it.size ? Math.min(100, Math.round(100 * (it.progress||0) / it.size)) : (it.status==="done"?100:0);
+  const st = `<span class="st ${it.status}">${it.status}</span>`;
+  const acc = `<button class="ghost" data-act="cancel" data-id="${it.id}">cancelar</button>
+               <button class="ghost" data-act="retry" data-id="${it.id}">reintentar</button>
+               <button class="ghost" data-act="remove" data-id="${it.id}">quitar</button>`;
+  return `<tr>
+    <td>${it.id}</td>
+    <td class="name" title="${esc(it.file_name)}">${esc(it.file_name)}${it.error ? ` <span class="st error" title="${esc(it.error)}">ver error</span>` : ""}</td>
+    <td>${hb(it.size)}</td>
+    <td><div class="bar"><i style="width:${pct}%"></i></div><span class="muted">${hb(it.progress)}${it.size ? " / "+hb(it.size) : ""} · ${pct}%</span></td>
+    <td>${st}</td>
+    <td>${acc}</td></tr>`;
+}
+
+async function refreshQueue(){
+  try{
+    const r = await api("/api/queue");
+    $("#qsummary").textContent = `pendientes ${r.counts.pending} · en curso ${r.counts.running} · hechos ${r.counts.done} · errores ${r.counts.error}`;
+    $("#qcount").textContent = (r.counts.pending + r.counts.running) ? "(" + (r.counts.pending + r.counts.running) + ")" : "";
+    $("#btn_pause").textContent = r.paused ? "Reanudar" : "Pausar";
+    $("#qrows").innerHTML = r.items.length ? r.items.map(qRow).join("") : `<tr><td colspan="6" class="empty">cola vacía</td></tr>`;
+    document.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
+      try{ const res = await api("/api/queue/action", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({action:b.dataset.act, id:Number(b.dataset.id)})});
+           toast(res.message); refreshQueue(); }
+      catch(e){ toast(esc(e.message)); }
+    });
+  }catch(e){ /* silencioso */ }
+}
+
+/* ------------------------------ descargados ----------------------------- */
+async function loadManifest(){
+  try{
+    const q = $("#d_q").value.trim();
+    const r = await api("/api/manifest" + (q ? "?q="+encodeURIComponent(q) : ""));
+    $("#drows").innerHTML = r.items.length ? r.items.map(m =>
+      `<tr><td class="name" title="${esc(m.file_name)}">${esc(m.file_name)}</td><td>${hb(m.size)}</td><td>${when(m.downloaded_at)}</td>
+       <td class="muted" style="font-family:ui-monospace,Consolas,monospace;font-size:12px">${esc(m.path)}</td></tr>`).join("")
+      : `<tr><td colspan="4" class="empty">nada todavía</td></tr>`;
+    $("#dinfo").textContent = r.items.length + " fichero(s)";
+  }catch(e){ toast(esc(e.message)); }
+}
+
+/* -------------------------- explorador de carpetas --------------------- */
+let mpath = "";
+async function fsLoad(path){
+  try{
+    const r = await api("/api/fs" + (path ? "?path="+encodeURIComponent(path) : ""));
+    mpath = r.path || "";
+    $("#mpath").value = mpath || "(raíces)";
+    const roots = (r.roots||[]).map(p => `<div data-go="${esc(p)}">🏠 ${esc(p)}</div>`).join("");
+    const dirs = (r.dirs||[]).map(p => `<div data-go="${esc(p)}">📁 ${esc(p)}</div>`).join("");
+    $("#mlist").innerHTML = roots + dirs + (roots+dirs ? "" : `<div class="empty">sin subcarpetas</div>`);
+    document.querySelectorAll("#mlist div[data-go], #mup").forEach(() => {});
+    document.querySelectorAll("#mlist [data-go]").forEach(el => el.onclick = () => fsLoad(el.dataset.go));
+    $("#mup").onclick = () => { if (r.parent) fsLoad(r.parent); };
+  }catch(e){ toast("No puedo leer " + esc(path||"") + ": " + esc(e.message), 7000); }
+}
+
+/* --------------------------------- init --------------------------------- */
+$("#loadchats").onclick = loadChats;
+$("#search").onclick = () => search(false);
+$("#more").onclick = () => search(true);
+$("#chatq").onkeydown = (e) => { if (e.key === "Enter") loadChats(); };
+$("#selall").onclick = (e) => {
+  document.querySelectorAll(".pick").forEach(cb => { cb.checked = e.target.checked; cb.onchange(); });
+};
+$("#enqueue").onclick = enqueue;
+$("#btn_pause").onclick = async () => {
+  const cur = $("#btn_pause").textContent.trim() === "Reanudar" ? "resume" : "pause";
+  try{ toast((await api("/api/queue/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:cur})})).message); refreshQueue(); }catch(e){ toast(esc(e.message)); }
+};
+$("#btn_retryf").onclick = async () => { try{ toast((await api("/api/queue/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"retry_failed"})})).message); refreshQueue(); }catch(e){ toast(esc(e.message)); } };
+$("#btn_clear").onclick = async () => { try{ toast((await api("/api/queue/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"clear_done"})})).message); refreshQueue(); }catch(e){ toast(esc(e.message)); } };
+$("#d_search").onclick = loadManifest;
+$("#browse").onclick = () => { $("#modal").classList.add("on"); fsLoad($("#dest").value.trim() || ""); };
+$("#mclose").onclick = () => $("#modal").classList.remove("on");
+$("#mchoose").onclick = () => { if (mpath) $("#dest").value = mpath; $("#modal").classList.remove("on"); };
+
+loadStatus();
+refreshQueue();
+setInterval(refreshQueue, 1500);
+setInterval(loadStatus, 15000);
+</script>
+</body>
+</html>

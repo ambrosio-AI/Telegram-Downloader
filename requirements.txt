@@ -1,0 +1,5 @@
+# Solo dos dependencias reales: Telethon (hablar con Telegram) y qrcode (enlazar con el móvil).
+telethon>=1.36
+qrcode>=7.4
+# Para que config.toml funcione en Python 3.9 y 3.10 (en 3.11+ ya viene de serie)
+tomli>=2.0; python_version < "3.11"

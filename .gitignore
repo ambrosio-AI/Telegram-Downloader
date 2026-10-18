@@ -1,0 +1,11 @@
+# datos locales: NUNCA subir esto
+data/
+*.session
+config.toml
+config.json
+descargas/
+.venv/
+__pycache__/
+*.pyc
+*.part
+.DS_Store
