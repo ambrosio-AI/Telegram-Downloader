@@ -1,7 +1,7 @@
 #!/bin/bash
 # Telegram-Downloader · arranca la interfaz. Doble clic en este fichero desde el Finder.
 cd "$(dirname "$0")" || exit 1
-clear
+[ -t 1 ] && clear
 echo "════════════════════════════════════════════════════════════"
 echo "   Telegram-Downloader"
 echo

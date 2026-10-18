@@ -2,7 +2,7 @@
 # Telegram-Downloader · enlaza tu cuenta de Telegram (solo hace falta la primera vez).
 # Doble clic en este fichero desde el Finder.
 cd "$(dirname "$0")" || exit 1
-clear
+[ -t 1 ] && clear
 echo "════════════════════════════════════════════════════════════"
 echo "   Telegram-Downloader · ENLAZAR MI CUENTA (una sola vez)"
 echo "════════════════════════════════════════════════════════════"
