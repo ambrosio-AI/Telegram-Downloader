@@ -49,6 +49,7 @@
   .st{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim)}
   .st.done{color:var(--ok);border-color:#215c45}.st.error{color:var(--err);border-color:#6b2b2b}
   .st.running{color:var(--acc);border-color:#204a75}.st.cancelled{color:var(--warn);border-color:#6b5320}
+  button.mini{padding:2px 7px;font-size:11.5px;border-radius:6px;color:var(--dim)}
   .foot{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:10px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:6}
   .foot .grow{flex:1;min-width:220px}
   .muted{color:var(--dim);font-size:12px}
@@ -108,7 +109,9 @@
           <label>Máx MB <input id="f_max" type="number" min="0" step="1" style="width:80px"></label>
           <label>Desde <input id="f_since" type="date"></label>
           <label>Hasta <input id="f_until" type="date"></label>
+          <label title="Trae toda la lista del grupo de una vez, no solo una tanda"><input type="checkbox" id="f_auto" checked> cargar todo</label>
           <button id="search" class="primary">Buscar</button>
+          <button id="stop" class="ghost" style="display:none">Parar</button>
           <button id="more" class="ghost" style="display:none">Cargar más</button>
         </div>
         <div class="tblwrap">
@@ -172,6 +175,7 @@
   <input id="dest" type="text" class="grow" placeholder="p.ej. /home/tu-usuario/Descargas/telegram">
   <button id="browse" class="ghost">Examinar…</button>
   <span class="muted" id="selinfo">0 seleccionados</span>
+  <label class="muted" title="Desmárcalo para volver a descargar algo aunque ya lo tengas"><input type="checkbox" id="f_skip" checked> saltar lo ya descargado</label>
   <button id="enqueue" class="primary" disabled>Añadir a la cola</button>
 </div>
 
@@ -183,6 +187,7 @@
       <input id="mpath" type="text" class="grow" style="flex:1;min-width:240px" readonly>
       <button id="mchoose" class="primary">Usar esta carpeta</button>
     </div>
+    <div class="pad muted" id="mnote" style="padding-top:0"></div>
     <div class="list" id="mlist"></div>
   </div>
 </div>
@@ -202,7 +207,10 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({'&':'&a
 const hb = (n) => { n = Number(n||0); const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024 && i<u.length-1){n/=1024;i++;} return (i===0?n.toFixed(0):n.toFixed(1))+' '+u[i]; };
 const when = (ts) => ts ? new Date(ts*1000).toLocaleString() : "";
 
-let state = {results: [], selected: new Map(), offset: null, chat: null, chats: [], demo: false};
+let state = {results: [], selected: new Map(), offset: null, chat: null, chats: [], demo: false, scanned: 0};
+const MAX_ITEMS = 20000;
+const auto = {running: false, abort: false};
+let PAGE = 200;              // ficheros por petición interna; el bucle sigue hasta traerlos todos
 
 function toast(msg, ms=4200){ const t=$("#toast"); t.innerHTML=msg; t.classList.add("on"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"), ms); }
 
@@ -262,7 +270,7 @@ function filtersBody(offset){
   return {
     chat_id: state.chat.id,
     offset: offset,
-    limit: 50,
+    limit: PAGE,
     q: $("#f_q").value.trim() || null,
     exts: $("#f_ext").value.split(",").map(s=>s.trim()).filter(Boolean),
     types: $("#f_type").value ? [$("#f_type").value] : [],
@@ -276,7 +284,7 @@ function rowHtml(it, i){
   const key = it.chat_id + ":" + it.msg_id;
   const sel = state.selected.has(key) ? "checked" : "";
   const done = it.downloaded ? " class=\"dl\"" : "";
-  const tag = it.downloaded ? ` <span class="st done">ya está</span>` : "";
+  const tag = it.downloaded ? ` <span class="st done">ya está</span> <button class="ghost mini" data-redl="${i}" title="Volver a descargarlo">↻ otra vez</button>` : "";
   return `<tr${done}>
     <td><input type="checkbox" class="pick" data-i="${i}" ${sel}></td>
     <td class="name" title="${esc(it.file_name)}">${esc(it.file_name)}${tag}</td>
@@ -295,21 +303,55 @@ function renderResults(){
     if (cb.checked) state.selected.set(key, it); else state.selected.delete(key);
     updateSel();
   });
-  $("#more").style.display = state.offset ? "" : "none";
+  document.querySelectorAll("[data-redl]").forEach(b => b.onclick = async () => {
+    const it = state.results[Number(b.dataset.redl)];
+    const dest = $("#dest").value.trim();
+    if (!dest) { toast("Elige antes la carpeta destino (abajo).", 6000); return; }
+    try{
+      const r = await api("/api/queue", {method:"POST", headers:{"Content-Type":"application/json"},
+                                         body: JSON.stringify({items:[it], dest_dir: dest, skip_existing:false})});
+      toast(`«${esc(it.file_name)}» vuelve a la cola (${r.added + r.requeued}).`, 6000);
+      refreshQueue(); loadStatus();
+    }catch(e){ toast("No he podido encolarlo: " + esc(e.message), 8000); }
+  });
 }
 
 async function search(more=false){
   if (!state.chat) { toast("Elige primero un grupo a la izquierda."); return; }
-  $("#search").disabled = true;
+  const loadAll = $("#f_auto").checked;
+  if (!more) { state.results = []; state.offset = null; state.scanned = 0; }
+  auto.abort = false; auto.running = true;
+  setBusy(true);
   try{
-    const body = filtersBody(more ? state.offset : 0);
-    const r = await api("/api/list", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
-    state.results = more ? state.results.concat(r.items) : r.items;
-    state.offset = r.next_offset;
-    renderResults();
-    $("#listinfo").textContent = `${state.results.length} fichero(s) listados · ${r.scanned} mensajes leídos${state.offset ? " · hay más, pulsa «Cargar más»" : ""}`;
+    for(;;){
+      const body = filtersBody(state.results.length ? state.offset : 0);
+      const r = await api("/api/list", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
+      state.results = state.results.concat(r.items);
+      state.offset = r.next_offset;
+      state.scanned = (state.scanned || 0) + r.scanned;
+      renderResults(); updateInfo();
+      if (auto.abort || !loadAll || !state.offset || state.results.length >= MAX_ITEMS) break;
+    }
   }catch(e){ toast("Error al listar: " + esc(e.message), 8000); }
-  finally{ $("#search").disabled = false; }
+  finally{ auto.running = false; setBusy(false); updateInfo(); }
+}
+
+function setBusy(on){
+  $("#search").disabled = on;
+  $("#search").textContent = on ? "Cargando…" : "Buscar";
+  $("#stop").style.display = on ? "" : "none";
+}
+
+function updateInfo(){
+  if (!state.chat) return;
+  const bits = [`${state.results.length} fichero(s)`];
+  if (state.scanned) bits.push(`${state.scanned} mensajes mirados`);
+  if (auto.running) bits.push("cargando el resto…");
+  else if (state.offset) bits.push("hay más: pulsa «Cargar más»");
+  else if (state.results.length) bits.push("lista completa");
+  if (state.results.length >= MAX_ITEMS) bits.push(`tope de ${MAX_ITEMS}: afina con los filtros`);
+  $("#listinfo").textContent = bits.join(" · ");
+  $("#more").style.display = (state.offset && !auto.running) ? "" : "none";
 }
 
 function updateSel(){
@@ -326,8 +368,9 @@ async function enqueue(){
   const dest = $("#dest").value.trim();
   if (!dest) { toast("Escribe o elige una carpeta destino."); return; }
   try{
-    const r = await api("/api/queue", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items, dest_dir: dest})});
-    toast(`Encolados ${r.added}. Ya en cola: ${r.queued_before}. Ya descargados (saltados): ${r.skipped_done}.`);
+    const r = await api("/api/queue", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items, dest_dir: dest, skip_existing: $("#f_skip").checked})});
+    const extra = r.requeued ? ` Reencolados (forzados): ${r.requeued}.` : "";
+    toast(`Encolados ${r.added}. ${extra} Ya en cola: ${r.queued_before}. Ya descargados (saltados): ${r.skipped_done}.`);
     state.selected.clear();
     document.querySelectorAll(".pick").forEach(cb => cb.checked = false);
     updateSel(); loadStatus(); refreshQueue();
@@ -384,19 +427,35 @@ async function fsLoad(path){
     const r = await api("/api/fs" + (path ? "?path="+encodeURIComponent(path) : ""));
     mpath = r.path || "";
     $("#mpath").value = mpath || "(raíces)";
+    $("#mnote").textContent = r.note || "";
     const roots = (r.roots||[]).map(p => `<div data-go="${esc(p)}">🏠 ${esc(p)}</div>`).join("");
     const dirs = (r.dirs||[]).map(p => `<div data-go="${esc(p)}">📁 ${esc(p)}</div>`).join("");
     $("#mlist").innerHTML = roots + dirs + (roots+dirs ? "" : `<div class="empty">sin subcarpetas</div>`);
-    document.querySelectorAll("#mlist div[data-go], #mup").forEach(() => {});
     document.querySelectorAll("#mlist [data-go]").forEach(el => el.onclick = () => fsLoad(el.dataset.go));
     $("#mup").onclick = () => { if (r.parent) fsLoad(r.parent); };
-  }catch(e){ toast("No puedo leer " + esc(path||"") + ": " + esc(e.message), 7000); }
+  }catch(e){ $("#mnote").textContent = "No puedo leer " + (path||"") + ": " + e.message; }
+}
+
+// Botón «Examinar…»: primero intenta el diálogo nativo del sistema (en el Mac, el del Finder);
+// si no está disponible, abre el navegador de carpetas de la propia página.
+async function pickFolder(){
+  let nat = null;
+  try{ nat = await api("/api/pick-folder", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"}); }
+  catch(e){ nat = {ok:false, reason:e.message}; }
+  if (nat && nat.ok){
+    if (nat.path){ $("#dest").value = nat.path; toast("Carpeta elegida: " + esc(nat.path)); }
+    return;                                  // cancelado por el usuario: no abrimos nada más
+  }
+  $("#modal").classList.add("on");
+  fsLoad($("#dest").value.trim() || "");
+  if (nat && nat.reason) toast("Sin selector del sistema (" + esc(nat.reason) + "): usa este explorador.", 6000);
 }
 
 /* --------------------------------- init --------------------------------- */
 $("#loadchats").onclick = loadChats;
 $("#search").onclick = () => search(false);
 $("#more").onclick = () => search(true);
+$("#stop").onclick = () => { auto.abort = true; };
 $("#chatq").onkeydown = (e) => { if (e.key === "Enter") loadChats(); };
 $("#selall").onclick = (e) => {
   document.querySelectorAll(".pick").forEach(cb => { cb.checked = e.target.checked; cb.onchange(); });
@@ -409,7 +468,7 @@ $("#btn_pause").onclick = async () => {
 $("#btn_retryf").onclick = async () => { try{ toast((await api("/api/queue/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"retry_failed"})})).message); refreshQueue(); }catch(e){ toast(esc(e.message)); } };
 $("#btn_clear").onclick = async () => { try{ toast((await api("/api/queue/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"clear_done"})})).message); refreshQueue(); }catch(e){ toast(esc(e.message)); } };
 $("#d_search").onclick = loadManifest;
-$("#browse").onclick = () => { $("#modal").classList.add("on"); fsLoad($("#dest").value.trim() || ""); };
+$("#browse").onclick = pickFolder;
 $("#mclose").onclick = () => $("#modal").classList.remove("on");
 $("#mchoose").onclick = () => { if (mpath) $("#dest").value = mpath; $("#modal").classList.remove("on"); };
 

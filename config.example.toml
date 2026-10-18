@@ -12,7 +12,8 @@ session = "data/tg"
 root = "./descargas"
 # Crear una subcarpeta por grupo dentro de la carpeta destino.
 subfolder_por_grupo = true
-# Saltar ficheros ya descargados (mismo fichero y mismo destino).
+# Saltar ficheros ya descargados antes (estén en la carpeta que estén).
+# En la interfaz llevas un interruptor «saltar lo ya descargado» para desactivarlo puntualmente.
 skip_existing = true
 # Reintentos por fichero ante error transitorio (FloodWait, timeout, red).
 max_retries = 3

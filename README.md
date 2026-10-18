@@ -7,7 +7,10 @@ elijas. Funciona en tu PC: **no necesita nada de nadie más**.
 ## Qué hace
 
 - Lista los ficheros (vídeo, audio, imagen, documento, comprimidos/ISO) de **cualquier grupo o chat**
-  donde esté tu cuenta, con filtros por texto, extensión, tipo, tamaño y fechas.
+  donde esté tu cuenta, con filtros por texto, extensión, tipo, tamaño y fechas. **Trae la lista
+  completa de un tirón** (no una tanda): los ficheros se muestran todos por defecto, mientras abajo
+  te va contando cuántos lleva y cómo va. Si el grupo tiene una historia enorme, puedes parar con el
+  botón *Parar* y afinar con los filtros.
 - Marca cuáles quieres y los **encola** con la carpeta destino que elijas (o varias, según te dé).
 - Descarga **de uno en uno**, con barra de progreso, pausa, cancelar, reintentar y reanudar la cola.
 - Lleva un **registro** de lo ya descargado: si vuelves a encolar lo mismo, lo salta.

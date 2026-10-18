@@ -92,7 +92,7 @@ class DemoBackend:
             )
         return out
 
-    async def list_files(self, chat_id: int, *, offset: int = 0, limit: int = 50, **filters) -> dict:
+    async def list_files(self, chat_id: int, *, offset: int = 0, limit: int = 200, docs_only: bool = True, **filters) -> dict:
         await asyncio.sleep(0.05)
         allf = self._all(chat_id)
         # orden descendente por fecha, y "offset" = índice de continuación
@@ -203,12 +203,21 @@ class TelethonBackend:
         self._sender_cache[sid] = name
         return name
 
-    async def list_files(self, chat_id: int, *, offset: int = 0, limit: int = 50, scan_cap: int = 4000, **filters) -> dict:
+    async def list_files(self, chat_id: int, *, offset: int = 0, limit: int = 200, scan_cap: int = 20000,
+                         docs_only: bool = True, **filters) -> dict:
         entity = await self.client.get_entity(int(chat_id))
         title = getattr(entity, "title", None) or str(chat_id)
         self._titles[int(chat_id)] = title
+        kwargs = {"limit": int(scan_cap), "offset_id": int(offset or 0)}
+        if docs_only:
+            # Filtro en el servidor de Telegram: trae TODOS los ficheros y es mucho más rápido
+            # que recorrer mensaje a mensaje. Las fotos enviadas como foto no son documentos:
+            # para incluirlas hay que pedir el tipo «imagen» (entonces sí se recorre todo).
+            from telethon.tl.types import InputMessagesFilterDocument
+
+            kwargs["filter"] = InputMessagesFilterDocument()
         matched, scanned, last_id = [], 0, offset or 0
-        async for msg in self.client.iter_messages(entity, limit=scan_cap, offset_id=int(offset or 0)):
+        async for msg in self.client.iter_messages(entity, **kwargs):
             scanned += 1
             last_id = msg.id
             f = getattr(msg, "file", None)

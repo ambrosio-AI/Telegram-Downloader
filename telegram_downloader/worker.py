@@ -50,8 +50,11 @@ class QueueWorker:
     def _target(self, item: dict) -> Path:
         d = self._dest_dir(item)
         name = safe_name(item["file_name"])
+        known = self.store.known_path(item.get("file_unique_id") or "")
+        if known and Path(known).parent == d:
+            return Path(known)  # volver a descargar lo mismo en su carpeta: se reemplaza, no se duplica
         p = d / name
-        if p.exists():
+        if p.exists() and not (known and Path(known) == p):
             stem, dot, ext = name.rpartition(".")
             p = d / (f"{stem}-{item['msg_id']}.{ext}" if dot else f"{name}-{item['msg_id']}")
         return p

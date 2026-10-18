@@ -78,12 +78,12 @@ class Store:
         }
 
     # ---------- cola ----------
-    def enqueue(self, items: list[dict], dest_dir: str) -> dict:
-        added = queued_before = skipped_done = 0
+    def enqueue(self, items: list[dict], dest_dir: str, skip_existing: bool = True) -> dict:
+        added = queued_before = skipped_done = requeued = 0
         now = time.time()
         for raw in items:
             it = self._clean(raw)
-            if it["file_unique_id"] and self.is_downloaded(it["file_unique_id"], dest_dir):
+            if skip_existing and it["file_unique_id"] and self.is_downloaded(it["file_unique_id"], dest_dir):
                 skipped_done += 1
                 continue
             try:
@@ -101,8 +101,20 @@ class Store:
                 else:
                     queued_before += 1
             except sqlite3.IntegrityError:
+                # Ya hay una fila para ese mensaje: si se ha pedido «forzar», se reencola.
+                row = self._rows("select id, status from queue where chat_id=? and msg_id=?",
+                                 (it["chat_id"], it["msg_id"]))
+                if (not skip_existing) and row and row[0]["status"] in ("done", "error", "cancelled", "skipped"):
+                    self._exec(
+                        """update queue set status='pending', progress=0, error=null, tries=0, dest_dir=?,
+                                  file_name=?, size=?, chat_title=?, started_at=null, finished_at=null
+                           where id=?""",
+                        (dest_dir, it["file_name"], it["size"], it["chat_title"], row[0]["id"]),
+                    )
+                    requeued += 1
+                    continue
                 queued_before += 1
-        return {"added": added, "queued_before": queued_before, "skipped_done": skipped_done}
+        return {"added": added, "queued_before": queued_before, "skipped_done": skipped_done, "requeued": requeued}
 
     def next_pending(self) -> dict | None:
         rows = self._rows("select * from queue where status='pending' order by id limit 1")
@@ -206,6 +218,10 @@ class Store:
             if Path(p).exists():
                 return p
         return None
+
+    def known_path(self, file_unique_id: str) -> str | None:
+        """Ruta donde ya se descargó este fichero, si sigue existiendo."""
+        return self.is_downloaded(file_unique_id)
 
     def manifest(self, q: str | None = None, limit: int = 500) -> list[dict]:
         if q:

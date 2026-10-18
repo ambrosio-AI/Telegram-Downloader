@@ -241,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
             except ValueError:
                 print(f"  fecha inválida en --{key}: {val} (usa AAAA-MM-DD)")
                 return 2
+    _img = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "heic"}
+    docs_only = not (("imagen" in [t.lower() for t in filters["types"]]) or bool(set(filters["exts"]) & _img))
 
     async def _with_backend(coro_factory):
         backend = make_backend(cfg, demo=False)
@@ -257,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "list":
         async def go(backend):
-            res = await backend.list_files(args.chat, offset=0, limit=args.limit, **filters)
+            res = await backend.list_files(args.chat, offset=0, limit=args.limit, docs_only=docs_only, **filters)
             print(f"  {len(res['items'])} resultado(s) (mensajes leídos: {res['scanned']}, siguiente offset: {res['next_offset']})")
             _print_files(res["items"])
             return 0
@@ -266,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "add":
         async def go(backend):
-            res = await backend.list_files(args.chat, offset=0, limit=args.limit, **filters)
+            res = await backend.list_files(args.chat, offset=0, limit=args.limit, docs_only=docs_only, **filters)
             if not res["items"]:
                 print("  nada que encolar con esos filtros")
                 return 0

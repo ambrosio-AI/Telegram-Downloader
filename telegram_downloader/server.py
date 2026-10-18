@@ -38,10 +38,19 @@ def _fs_listing(path: str | None) -> dict:
     else:
         roots = ["/", str(home)]
     if not path:
-        return {"path": "", "parent": None, "dirs": [str(home)], "roots": roots}
+        return {"path": "", "parent": None, "dirs": [str(home)], "roots": roots, "note": ""}
     p = Path(path).expanduser()
+    note = ""
     if not p.is_dir():
-        raise HttpError(400, f"no es una carpeta: {p}")
+        # La carpeta puede no existir todavía (es normal antes de la primera descarga):
+        # en vez de fallar, abrimos la carpeta existente más cercana por encima.
+        note = f"«{p}» todavía no existe; se ha abierto la carpeta superior"
+        q = p
+        while q != q.parent and not q.is_dir():
+            q = q.parent
+        if not q.is_dir():
+            raise HttpError(400, f"no es una carpeta: {p}")
+        p = q
     dirs = []
     try:
         for child in sorted(p.iterdir(), key=lambda x: x.name.lower()):
@@ -52,7 +61,8 @@ def _fs_listing(path: str | None) -> dict:
                 continue
     except PermissionError:
         pass
-    return {"path": str(p), "parent": str(p.parent) if p.parent != p else None, "dirs": dirs, "roots": roots}
+    return {"path": str(p), "parent": str(p.parent) if p.parent != p else None, "dirs": dirs,
+            "roots": roots, "note": note}
 
 
 class App:
@@ -62,6 +72,10 @@ class App:
         self.cfg = cfg
         self.demo = demo
         self.store = Store(cfgmod.data_dir(cfg) / "telegram-downloader.db")
+        try:  # la carpeta por defecto puede no existir aún; así el explorador siempre abre en sitio real
+            cfgmod.downloads_root(cfg).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
         self.backend = None
         self.worker = None
         self.loop = asyncio.new_event_loop()
@@ -153,12 +167,19 @@ class App:
                 "since": body.get("since") or None,
                 "until": body.get("until") or None,
             }
+            types = [str(t).lower() for t in (body.get("types") or [])]
+            exts = [str(e).lower().lstrip(".") for e in (body.get("exts") or [])]
+            img_exts = {"jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff", "heic"}
+            # Con documentos, Telegram filtra en su servidor: trae TODOS los ficheros y va mucho
+            # más rápido. Si se piden imágenes (que en Telegram no son documentos), se recorre todo.
+            docs_only = not (("imagen" in types or "image" in types) or bool(set(exts) & img_exts))
             try:
                 res = self.call(
                     self.backend.list_files(
                         int(body["chat_id"]),
                         offset=int(body.get("offset") or 0),
-                        limit=int(body.get("limit") or 50),
+                        limit=min(int(body.get("limit") or 200), 500),
+                        docs_only=docs_only,
                         **filters,
                     )
                 )
@@ -190,7 +211,10 @@ class App:
                 probe.unlink()
             except Exception as exc:  # noqa: BLE001
                 raise HttpError(400, f"no puedo escribir en {dest}: {exc}") from exc
-            return 200, self.store.enqueue(items, str(dest))
+            return 200, self.store.enqueue(
+                items, str(dest),
+                skip_existing=bool(body.get("skip_existing", self.cfg["downloads"].get("skip_existing", True))),
+            )
 
         if path == "/api/queue/action":
             act = ((body or {}).get("action") or "").strip()
@@ -203,7 +227,31 @@ class App:
         if path == "/api/fs":
             return 200, _fs_listing(query.get("path"))
 
+        if path == "/api/pick-folder":
+            return 200, self.pick_folder_native()
+
         raise HttpError(404, f"ruta desconocida: {path}")
+
+    # ---------------------- selector de carpetas del sistema ---------------------- #
+    def pick_folder_native(self) -> dict:
+        """En macOS abre el diálogo nativo de carpetas (Finder). En otros sistemas, no."""
+        import platform
+        import subprocess
+
+        if platform.system() != "Darwin":
+            return {"ok": False, "path": None, "reason": "este sistema no tiene selector nativo"}
+        script = 'tell application "System Events" to POSIX path of (choose folder with prompt "Elige la carpeta de descargas")'
+        try:
+            r = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=300)
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "path": None, "reason": f"{exc.__class__.__name__}"}
+        out = (r.stdout or "").strip()
+        if r.returncode == 0 and out:
+            return {"ok": True, "path": out.rstrip("/"), "reason": ""}
+        err = (r.stderr or "").strip()
+        if "User canceled" in err or "(-128)" in err:
+            return {"ok": True, "path": None, "reason": "cancelado"}
+        return {"ok": False, "path": None, "reason": err[:160] or "no se pudo abrir el diálogo"}
 
 
 class Handler(BaseHTTPRequestHandler):
