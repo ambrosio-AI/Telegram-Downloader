@@ -33,6 +33,13 @@ Telegram**, desde tu ordenador, con tu cuenta.
   cancelar, reintentar y limpiar terminados.
 - **Marca lo que ya tienes** («ya está») y te deja **volver a bajarlo** con un clic (`↻ otra vez`) sin
   crear copias duplicadas: se reemplaza donde corresponda.
+- **Guarda las cuentas de cada descarga**: cuánto tardó, la velocidad media y la velocidad máxima, en la
+  pestaña *Cola* y en el registro.
+- **Reanuda lo que quedó a medias**: si cierras el programa en mitad de una descarga, al arrancar de
+  nuevo esa descarga vuelve sola a la cola.
+- **Carpeta por grupo legible**: si el nombre del grupo son solo emoticonos, usa `grupo-<id>` en vez de
+  una carpeta llamada `_`.
+- **Recuerda tu carpeta destino** (botón *fijar carpeta*), para no volver a escribirla cada vez.
 - **Carpeta destino a tu gusto**, con el explorador de carpetas del sistema (en macOS, el diálogo
   nativo del Finder).
 - **También sin interfaz**: `list`, `add`, `run`, `status` desde la consola, ideal para tareas
@@ -102,8 +109,9 @@ Abrir** una sola vez.
 
 - **Explorar**: buscador de grupos/chats, filtros y la tabla de ficheros con casillas. La lista se
   carga entera; abajo verás `N fichero(s) · M mensajes mirados · lista completa`.
-- **Cola**: estado de cada descarga, progreso, errores y acciones (cancelar, reintentar, quitar).
-- **Descargado**: todo lo que ya has bajado, con su ruta y su tamaño.
+- **Cola**: estado de cada descarga, progreso, **velocidad media y máxima**, duración, errores y
+  acciones (cancelar, reintentar, quitar).
+- **Descargado**: todo lo que ya has bajado, con su tamaño, **su velocidad media**, su ruta y la fecha.
 
 ![Cola de descargas](docs/cola.png)
 
@@ -223,6 +231,13 @@ Telegram**, from your own computer, with your own account.
   cancel, retry and cleanup.
 - **Marks what you already have** (“ya está”) and lets you **download it again** with one click
   (`↻ otra vez`) without creating duplicates — it replaces the file in place.
+- **Keeps per-download stats**: duration, average speed and peak speed, shown in the *Cola/Queue* tab
+  and in the download registry.
+- **Resumes interrupted work**: if you close the app mid-download, that download goes back to the queue
+  on next start (the incomplete file is discarded and fetched again).
+- **Readable per-group subfolders**: if the group name is all emoji, it uses `grupo-<id>` instead of a
+  folder named `_`.
+- **Remembers your destination folder** (*fijar carpeta* button) in the browser.
 - **Destination folder** picked with your system's folder browser (native Finder dialog on macOS).
 - **Headless mode**: `list`, `add`, `run`, `status` from the terminal, handy for scheduled jobs.
 - **Demo mode** (`--demo`): try the whole app with fake data, without touching your account.
