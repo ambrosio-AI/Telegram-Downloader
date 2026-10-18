@@ -143,9 +143,9 @@
         <table>
           <thead><tr>
             <th style="width:50px">#</th><th>Fichero</th><th style="width:110px">Tamaño</th>
-            <th style="width:190px">Progreso</th><th style="width:110px">Estado</th><th style="width:190px">Acciones</th>
+            <th style="width:190px">Progreso</th><th style="width:120px">Velocidad</th><th style="width:110px">Estado</th><th style="width:190px">Acciones</th>
           </tr></thead>
-          <tbody id="qrows"><tr><td colspan="6" class="empty">cola vacía</td></tr></tbody>
+          <tbody id="qrows"><tr><td colspan="7" class="empty">cola vacía</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -162,8 +162,8 @@
       </div>
       <div class="tblwrap">
         <table>
-          <thead><tr><th>Fichero</th><th style="width:100px">Tamaño</th><th style="width:150px">Cuándo</th><th>Ruta</th></tr></thead>
-          <tbody id="drows"><tr><td colspan="4" class="empty">nada todavía</td></tr></tbody>
+          <thead><tr><th>Fichero</th><th style="width:100px">Tamaño</th><th style="width:110px">Velocidad</th><th style="width:150px">Cuándo</th><th>Ruta</th></tr></thead>
+          <tbody id="drows"><tr><td colspan="5" class="empty">nada todavía</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -172,8 +172,9 @@
 
 <div class="foot">
   <span class="muted">Carpeta destino</span>
-  <input id="dest" type="text" class="grow" placeholder="p.ej. /home/tu-usuario/Descargas/telegram">
+  <input id="dest" type="text" class="grow" placeholder="p.ej. /Users/tu-usuario/Descargas/telegram">
   <button id="browse" class="ghost">Examinar…</button>
+  <button id="memo" class="ghost" title="Recordar esta carpeta en este navegador">fijar carpeta</button>
   <span class="muted" id="selinfo">0 seleccionados</span>
   <label class="muted" title="Desmárcalo para volver a descargar algo aunque ya lo tengas"><input type="checkbox" id="f_skip" checked> saltar lo ya descargado</label>
   <button id="enqueue" class="primary" disabled>Añadir a la cola</button>
@@ -230,7 +231,11 @@ async function loadStatus(){
     const b = $("#badge");
     b.className = "badge " + (s.demo ? "demo" : (s.state === "ok" ? "ok" : "err"));
     b.textContent = s.demo ? "modo demo" : (s.state === "ok" ? "sesión: " + (s.me && (s.me.name || s.me.username)) : "sin sesión (" + s.state + ")");
-    if ($("#dest").value === "") $("#dest").value = s.dest_root || "";
+    if ($("#dest").value === "") {
+      let guardada = "";
+      try { guardada = localStorage.getItem("td_dest") || ""; } catch(e) { guardada = ""; }
+      $("#dest").value = guardada || s.dest_root || "";
+    }
     if (state.demo || s.state === "ok") $("#banner").style.display = "none";
     else {
       $("#banner").style.display = "";
@@ -377,9 +382,14 @@ async function enqueue(){
   }catch(e){ toast("No he podido encolar: " + esc(e.message), 8000); }
 }
 
+function velTxt(v){ return (typeof v === "number" && v > 0) ? v.toFixed(1) + " MB/s" : "—"; }
+
 function qRow(it){
   const pct = it.size ? Math.min(100, Math.round(100 * (it.progress||0) / it.size)) : (it.status==="done"?100:0);
   const st = `<span class="st ${it.status}">${it.status}</span>`;
+  const vel = it.speed_avg ? velTxt(it.speed_avg) : (it.status === "running" ? "midiendo…" : "—");
+  const pico = it.speed_max ? `<br><span class="muted">máx ${it.speed_max.toFixed(1)}</span>` : "";
+  const t = it.duration_s ? `<br><span class="muted">${it.duration_s < 60 ? it.duration_s.toFixed(1) + " s" : Math.floor(it.duration_s/60) + " min " + Math.round(it.duration_s%60) + " s"}</span>` : "";
   const acc = `<button class="ghost" data-act="cancel" data-id="${it.id}">cancelar</button>
                <button class="ghost" data-act="retry" data-id="${it.id}">reintentar</button>
                <button class="ghost" data-act="remove" data-id="${it.id}">quitar</button>`;
@@ -388,6 +398,7 @@ function qRow(it){
     <td class="name" title="${esc(it.file_name)}">${esc(it.file_name)}${it.error ? ` <span class="st error" title="${esc(it.error)}">ver error</span>` : ""}</td>
     <td>${hb(it.size)}</td>
     <td><div class="bar"><i style="width:${pct}%"></i></div><span class="muted">${hb(it.progress)}${it.size ? " / "+hb(it.size) : ""} · ${pct}%</span></td>
+    <td>${vel}${pico}${t}</td>
     <td>${st}</td>
     <td>${acc}</td></tr>`;
 }
@@ -398,7 +409,7 @@ async function refreshQueue(){
     $("#qsummary").textContent = `pendientes ${r.counts.pending} · en curso ${r.counts.running} · hechos ${r.counts.done} · errores ${r.counts.error}`;
     $("#qcount").textContent = (r.counts.pending + r.counts.running) ? "(" + (r.counts.pending + r.counts.running) + ")" : "";
     $("#btn_pause").textContent = r.paused ? "Reanudar" : "Pausar";
-    $("#qrows").innerHTML = r.items.length ? r.items.map(qRow).join("") : `<tr><td colspan="6" class="empty">cola vacía</td></tr>`;
+    $("#qrows").innerHTML = r.items.length ? r.items.map(qRow).join("") : `<tr><td colspan="7" class="empty">cola vacía</td></tr>`;
     document.querySelectorAll("[data-act]").forEach(b => b.onclick = async () => {
       try{ const res = await api("/api/queue/action", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({action:b.dataset.act, id:Number(b.dataset.id)})});
            toast(res.message); refreshQueue(); }
@@ -413,9 +424,11 @@ async function loadManifest(){
     const q = $("#d_q").value.trim();
     const r = await api("/api/manifest" + (q ? "?q="+encodeURIComponent(q) : ""));
     $("#drows").innerHTML = r.items.length ? r.items.map(m =>
-      `<tr><td class="name" title="${esc(m.file_name)}">${esc(m.file_name)}</td><td>${hb(m.size)}</td><td>${when(m.downloaded_at)}</td>
+      `<tr><td class="name" title="${esc(m.file_name)}">${esc(m.file_name)}</td><td>${hb(m.size)}</td>
+       <td title="${m.speed_max ? 'máx ' + m.speed_max.toFixed(1) + ' MB/s' : ''}">${velTxt(m.speed_avg)}</td>
+       <td>${when(m.downloaded_at)}</td>
        <td class="muted" style="font-family:ui-monospace,Consolas,monospace;font-size:12px">${esc(m.path)}</td></tr>`).join("")
-      : `<tr><td colspan="4" class="empty">nada todavía</td></tr>`;
+      : `<tr><td colspan="5" class="empty">nada todavía</td></tr>`;
     $("#dinfo").textContent = r.items.length + " fichero(s)";
   }catch(e){ toast(esc(e.message)); }
 }
@@ -469,6 +482,12 @@ $("#btn_retryf").onclick = async () => { try{ toast((await api("/api/queue/actio
 $("#btn_clear").onclick = async () => { try{ toast((await api("/api/queue/action",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"clear_done"})})).message); refreshQueue(); }catch(e){ toast(esc(e.message)); } };
 $("#d_search").onclick = loadManifest;
 $("#browse").onclick = pickFolder;
+$("#memo").onclick = () => {
+  const v = $("#dest").value.trim();
+  if (!v) { toast("Escribe o elige una carpeta y vuelvo a pulsar."); return; }
+  try { localStorage.setItem("td_dest", v); toast("Carpeta fijada: " + esc(v) + " (se recordará en este navegador)."); }
+  catch(e){ toast("Este navegador no me deja recordarla."); }
+};
 $("#mclose").onclick = () => $("#modal").classList.remove("on");
 $("#mchoose").onclick = () => { if (mpath) $("#dest").value = mpath; $("#modal").classList.remove("on"); };
 

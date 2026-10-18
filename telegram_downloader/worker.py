@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 import unicodedata
 from pathlib import Path
 
@@ -16,6 +17,15 @@ def safe_name(name: str) -> str:
     name = unicodedata.normalize("NFC", name)
     name = SAFE.sub("_", name).strip(" .")
     return name or "fichero"
+
+
+def group_folder(title: str | None, chat_id) -> str:
+    """Carpeta para un grupo. Si su nombre no deja nada legible (p. ej. solo emoticonos),
+    se usa el id, para no acabar con carpetas llamadas «_»."""
+    name = safe_name(title or "")
+    if not re.search(r"[A-Za-z0-9]", name):
+        return f"grupo-{str(chat_id).lstrip('-')}"
+    return name
 
 
 def human(n: int) -> str:
@@ -44,7 +54,7 @@ class QueueWorker:
         if not base.is_absolute():
             base = cfgmod.BASE / base
         if self.cfg["downloads"].get("subfolder_por_grupo") and item.get("chat_title"):
-            base = base / safe_name(item["chat_title"])
+            base = base / group_folder(item.get("chat_title"), item.get("chat_id"))
         return base
 
     def _target(self, item: dict) -> Path:
@@ -60,6 +70,9 @@ class QueueWorker:
         return p
 
     async def run(self) -> None:
+        reanudadas = self.store.reset_running()
+        if reanudadas:
+            print(f"  {reanudadas} descarga(s) que se quedaron a medias vuelven a la cola.", flush=True)
         while not self.stop.is_set():
             try:
                 if self.paused:
@@ -85,28 +98,46 @@ class QueueWorker:
         tries = self.store.pending_tries(qid)
         max_tries = int(self.cfg["downloads"].get("max_retries") or 3)
 
+        t0 = time.time()
+        vel = {"t": None, "b": 0, "max": 0.0}
+
         def progress(received: int, total: int) -> None:
             self.store.set_progress(qid, received)
+            ahora = time.time()
+            if vel["t"] is None:                      # primera muestra: solo fija la referencia
+                vel["t"], vel["b"] = ahora, received
+                return
+            dt = ahora - vel["t"]
+            if dt >= 0.4:                            # ventana mínima para que la medida tenga sentido
+                inst = (received - vel["b"]) / dt / 1048576.0
+                if inst > vel["max"]:
+                    vel["max"] = inst
+                vel["t"], vel["b"] = ahora, received  # solo se mueve la referencia al medir
 
         def is_cancelled() -> bool:
             return self.store.status_of(qid) == "cancelled"
 
         try:
             await self.backend.download(item, target, progress=progress, is_cancelled=is_cancelled)
+            segundos = time.time() - t0
             size = target.stat().st_size if target.exists() else (item.get("size") or 0)
+            media = (size / segundos / 1048576.0) if segundos > 0.05 else None
+            pico = vel["max"] or None
             self.store.set_progress(qid, size)
-            self.store.record_download(item, str(target), size)
-            self.store.finish(qid, "done")
+            self.store.record_download(item, str(target), size, duration=segundos,
+                                       speed_avg=media, speed_max=pico)
+            self.store.finish(qid, "done", duration=segundos, speed_avg=media, speed_max=pico)
         except Cancelled:
-            self.store.finish(qid, "cancelled", "cancelado")
+            self.store.finish(qid, "cancelled", "cancelado", duration=time.time() - t0)
         except BaseException as exc:  # noqa: BLE001 — se guarda el motivo real
+            segundos = time.time() - t0
             name = exc.__class__.__name__
             if is_cancelled():
-                self.store.finish(qid, "cancelled", "cancelado")
+                self.store.finish(qid, "cancelled", "cancelado", duration=segundos)
             elif name in {"FloodWaitError", "TimeoutError", "ConnectionError", "OSError"} and tries < max_tries:
                 self.store.requeue(qid)
             else:
-                self.store.finish(qid, "error", f"{name}: {exc}")
+                self.store.finish(qid, "error", f"{name}: {exc}", duration=segundos)
         finally:
             self.current = None
 

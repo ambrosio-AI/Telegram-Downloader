@@ -24,6 +24,9 @@ create table if not exists queue (
   created_at   real,
   started_at   real,
   finished_at  real,
+  duration_s   real,                              -- segundos reales de descarga
+  speed_avg    real,                              -- MB/s medios de ese fichero
+  speed_max    real,                              -- MB/s máximos observados
   unique(chat_id, msg_id)
 );
 create index if not exists idx_queue_status on queue(status);
@@ -36,10 +39,23 @@ create table if not exists manifest (
   file_name    text,
   size         integer,
   path         text,
-  downloaded_at real
+  downloaded_at real,
+  duration_s   real,
+  speed_avg    real,
+  speed_max    real
 );
 create index if not exists idx_manifest_name on manifest(file_name);
 """
+
+# Columnas añadidas después de la primera versión: se aplican sin tocar los datos existentes.
+MIGRATIONS = (
+    "alter table queue add column duration_s real",
+    "alter table queue add column speed_avg real",
+    "alter table queue add column speed_max real",
+    "alter table manifest add column duration_s real",
+    "alter table manifest add column speed_avg real",
+    "alter table manifest add column speed_max real",
+)
 
 
 class Store:
@@ -51,6 +67,11 @@ class Store:
         self._db.row_factory = sqlite3.Row
         with self._lock:
             self._db.executescript(SCHEMA)
+            for sql in MIGRATIONS:      # idempotente: si la columna ya está, SQLite se queja y seguimos
+                try:
+                    self._db.execute(sql)
+                except sqlite3.OperationalError:
+                    pass
             self._db.commit()
 
     # ---------- utilidades ----------
@@ -126,14 +147,25 @@ class Store:
             (time.time(), qid),
         )
 
-    def finish(self, qid: int, status: str, error: str | None = None, progress: int | None = None) -> None:
-        if progress is None:
-            self._exec("update queue set status=?, error=?, finished_at=? where id=?", (status, error, time.time(), qid))
-        else:
-            self._exec(
-                "update queue set status=?, error=?, progress=?, finished_at=? where id=?",
-                (status, error, progress, time.time(), qid),
-            )
+    def finish(self, qid: int, status: str, error: str | None = None, progress: int | None = None,
+               duration: float | None = None, speed_avg: float | None = None,
+               speed_max: float | None = None) -> None:
+        campos = ["status=?", "error=?", "finished_at=?"]
+        valores: list = [status, error, time.time()]
+        if progress is not None:
+            campos.append("progress=?")
+            valores.append(int(progress))
+        if duration is not None:
+            campos.append("duration_s=?")
+            valores.append(float(duration))
+        if speed_avg is not None:
+            campos.append("speed_avg=?")
+            valores.append(float(speed_avg))
+        if speed_max is not None:
+            campos.append("speed_max=?")
+            valores.append(float(speed_max))
+        valores.append(qid)
+        self._exec(f"update queue set {', '.join(campos)} where id=?", tuple(valores))
 
     def set_progress(self, qid: int, progress: int) -> None:
         self._exec("update queue set progress=? where id=?", (int(progress), qid))
@@ -145,6 +177,14 @@ class Store:
     def item(self, qid: int) -> dict | None:
         rows = self._rows("select * from queue where id=?", (qid,))
         return rows[0] if rows else None
+
+    def reset_running(self) -> int:
+        """Filas que quedaron «running» porque el programa se cerró a mitad: vuelven a la cola."""
+        cur = self._exec(
+            "update queue set status='pending', progress=0, error='se reanuda: el programa se cerró a mitad', "
+            "started_at=null where status='running'"
+        )
+        return cur.rowcount or 0
 
     def pending_tries(self, qid: int) -> int:
         rows = self._rows("select tries from queue where id=?", (qid,))
@@ -194,17 +234,22 @@ class Store:
         return self._rows("select * from queue order by id desc limit ?", (limit,))
 
     # ---------- registro de descargas ----------
-    def record_download(self, item: dict, path: str, size: int | None = None) -> None:
+    def record_download(self, item: dict, path: str, size: int | None = None,
+                        duration: float | None = None, speed_avg: float | None = None,
+                        speed_max: float | None = None) -> None:
         uid = item.get("file_unique_id") or f"{item['chat_id']}:{item['msg_id']}"
         self._exec(
-            """insert into manifest (file_unique_id, chat_id, chat_title, msg_id, file_name, size, path, downloaded_at)
-               values (?,?,?,?,?,?,?,?)
+            """insert into manifest (file_unique_id, chat_id, chat_title, msg_id, file_name, size, path,
+                                     downloaded_at, duration_s, speed_avg, speed_max)
+               values (?,?,?,?,?,?,?,?,?,?,?)
                on conflict(file_unique_id) do update set
                  path=excluded.path, size=excluded.size, file_name=excluded.file_name,
-                 downloaded_at=excluded.downloaded_at""",
+                 downloaded_at=excluded.downloaded_at, duration_s=excluded.duration_s,
+                 speed_avg=excluded.speed_avg, speed_max=excluded.speed_max""",
             (
                 uid, int(item["chat_id"]), item.get("chat_title") or "", int(item["msg_id"]),
                 item["file_name"], int(size or item.get("size") or 0), path, time.time(),
+                duration, speed_avg, speed_max,
             ),
         )
 
