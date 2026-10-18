@@ -65,6 +65,18 @@ run.bat demo
 5. En la interfaz: *Cargar chats* → elige el grupo → filtra → marca ficheros → elige carpeta
    destino → *Añadir a la cola*. La pestaña **Cola** va mostrando el progreso.
 
+## En el Mac (doble clic, sin consola)
+
+En la carpeta del programa tienes dos lanzadores:
+
+1. **`1 Enlazar con Telegram.command`** — solo la primera vez. Te abre el `config.toml` para poner tus
+   claves y después te muestra el **QR** para enlazar la cuenta desde el móvil.
+2. **`2 Arrancar Telegram-Downloader.command`** — abre la interfaz en el navegador. Deja esa ventana
+   abierta mientras descargas; para parar, ciérrala o pulsa Ctrl+C.
+
+Si macOS te avisa de que el fichero «no se puede abrir porque proviene de un desarrollador no
+identificado», haz clic derecho → *Abrir* una sola vez (no hace falta tocar nada más).
+
 ## Por consola (sin interfaz)
 
 ```bash
